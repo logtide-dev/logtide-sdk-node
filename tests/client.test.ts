@@ -1,0 +1,408 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { LogWardClient, serializeError } from '../src/index.js';
+
+// Mock fetch globally
+global.fetch = vi.fn();
+
+describe('LogWardClient', () => {
+  let client: LogWardClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+
+    client = new LogWardClient({
+      apiUrl: 'http://localhost:8080',
+      apiKey: 'test-api-key',
+      batchSize: 5,
+      flushInterval: 1000,
+      maxBufferSize: 10,
+      maxRetries: 2,
+      retryDelayMs: 100,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    vi.useRealTimers();
+  });
+
+  describe('Logging Methods', () => {
+    it('should log messages with correct levels', () => {
+      client.debug('test-service', 'Debug message');
+      client.info('test-service', 'Info message');
+      client.warn('test-service', 'Warn message');
+      client.error('test-service', 'Error message');
+      client.critical('test-service', 'Critical message');
+
+      const metrics = client.getMetrics();
+      expect(metrics.logsSent).toBe(0); // Not flushed yet
+    });
+
+    it('should add metadata to logs', () => {
+      client.info('test-service', 'Test message', { userId: 123 });
+
+      // Flush manually to check
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.flush();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"userId":123'),
+        }),
+      );
+    });
+
+    it('should serialize errors in error/critical logs', () => {
+      const error = new Error('Test error');
+
+      client.error('test-service', 'Error occurred', error);
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.flush();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"name":"Error"'),
+        }),
+      );
+    });
+  });
+
+  describe('Batching & Flushing', () => {
+    it('should auto-flush when batch size is reached', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      // Add 5 logs (batch size)
+      for (let i = 0; i < 5; i++) {
+        client.info('test-service', `Message ${i}`);
+      }
+
+      await vi.runAllTimersAsync();
+
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('should auto-flush on interval', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.info('test-service', 'Test message');
+
+      // Advance timer by flush interval
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(mockFetch).toHaveBeenCalled();
+    });
+
+    it('should not flush empty buffer', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      await client.flush();
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Max Buffer Size', () => {
+    it('should drop logs when buffer is full', () => {
+      const mockFetch = vi.mocked(fetch);
+
+      // Fill buffer beyond max (10 logs)
+      for (let i = 0; i < 15; i++) {
+        client.info('test-service', `Message ${i}`);
+      }
+
+      const metrics = client.getMetrics();
+      expect(metrics.logsDropped).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Retry Logic', () => {
+    it('should retry on failure with exponential backoff', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      // Fail twice, then succeed
+      mockFetch
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockRejectedValueOnce(new Error('Network error'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as Response);
+
+      client.info('test-service', 'Test message');
+
+      const flushPromise = client.flush();
+
+      // Wait for retries with exponential backoff
+      await vi.advanceTimersByTimeAsync(100); // First retry after 100ms
+      await vi.advanceTimersByTimeAsync(200); // Second retry after 200ms
+
+      await flushPromise;
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+
+      const metrics = client.getMetrics();
+      expect(metrics.retries).toBe(2);
+      expect(metrics.logsSent).toBe(1);
+    });
+
+    it('should fail after max retries', async () => {
+      const mockFetch = vi.mocked(fetch);
+
+      // Always fail
+      mockFetch.mockRejectedValue(new Error('Network error'));
+
+      client.info('test-service', 'Test message');
+
+      const flushPromise = client.flush();
+
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(400);
+
+      await flushPromise;
+
+      expect(mockFetch).toHaveBeenCalledTimes(3); // maxRetries = 2, so 3 total attempts
+
+      const metrics = client.getMetrics();
+      expect(metrics.errors).toBeGreaterThan(0);
+      expect(metrics.logsSent).toBe(0);
+    });
+  });
+
+  describe('Circuit Breaker', () => {
+    it('should open circuit after threshold failures', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockRejectedValue(new Error('Network error'));
+
+      const circuitBreakerClient = new LogWardClient({
+        apiUrl: 'http://localhost:8080',
+        apiKey: 'test-api-key',
+        maxRetries: 0,
+        circuitBreakerThreshold: 2,
+        circuitBreakerResetMs: 5000,
+      });
+
+      // Fail twice to open circuit
+      circuitBreakerClient.info('test-service', 'Message 1');
+      await circuitBreakerClient.flush();
+
+      circuitBreakerClient.info('test-service', 'Message 2');
+      await circuitBreakerClient.flush();
+
+      expect(circuitBreakerClient.getCircuitBreakerState()).toBe('OPEN');
+
+      // Next flush should be skipped
+      circuitBreakerClient.info('test-service', 'Message 3');
+      await circuitBreakerClient.flush();
+
+      const metrics = circuitBreakerClient.getMetrics();
+      expect(metrics.circuitBreakerTrips).toBeGreaterThan(0);
+
+      await circuitBreakerClient.close();
+    });
+  });
+
+  describe('Context Helpers', () => {
+    it('should set and get trace ID', () => {
+      client.setTraceId('trace-123');
+
+      expect(client.getTraceId()).toBe('trace-123');
+    });
+
+    it('should use trace ID in logs', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.setTraceId('trace-456');
+      client.info('test-service', 'Test message');
+
+      await client.flush();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"trace_id":"trace-456"'),
+        }),
+      );
+    });
+
+    it('should execute function with trace ID context', () => {
+      client.withTraceId('temp-trace', () => {
+        expect(client.getTraceId()).toBe('temp-trace');
+      });
+
+      expect(client.getTraceId()).toBeNull();
+    });
+
+    it('should auto-generate trace ID when enabled', () => {
+      const autoClient = new LogWardClient({
+        apiUrl: 'http://localhost:8080',
+        apiKey: 'test-api-key',
+        autoTraceId: true,
+      });
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      autoClient.info('test-service', 'Test message');
+      autoClient.flush();
+
+      const callArgs = mockFetch.mock.calls[0][1];
+      const body = JSON.parse(callArgs?.body as string);
+
+      expect(body.logs[0].trace_id).toBeDefined();
+      expect(body.logs[0].trace_id).toMatch(/^[0-9a-f-]{36}$/);
+
+      autoClient.close();
+    });
+  });
+
+  describe('Global Metadata', () => {
+    it('should add global metadata to all logs', async () => {
+      const clientWithGlobalMetadata = new LogWardClient({
+        apiUrl: 'http://localhost:8080',
+        apiKey: 'test-api-key',
+        globalMetadata: {
+          env: 'test',
+          version: '1.0.0',
+        },
+      });
+
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      clientWithGlobalMetadata.info('test-service', 'Test message', { custom: 'data' });
+      await clientWithGlobalMetadata.flush();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"env":"test"'),
+        }),
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"version":"1.0.0"'),
+        }),
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"custom":"data"'),
+        }),
+      );
+
+      await clientWithGlobalMetadata.close();
+    });
+  });
+
+  describe('Metrics', () => {
+    it('should track metrics correctly', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.info('test-service', 'Message 1');
+      client.info('test-service', 'Message 2');
+      await client.flush();
+
+      const metrics = client.getMetrics();
+
+      expect(metrics.logsSent).toBe(2);
+      expect(metrics.avgLatencyMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should reset metrics', async () => {
+      const mockFetch = vi.mocked(fetch);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as Response);
+
+      client.info('test-service', 'Test message');
+      await client.flush();
+
+      client.resetMetrics();
+
+      const metrics = client.getMetrics();
+      expect(metrics.logsSent).toBe(0);
+    });
+  });
+
+  describe('Error Serialization', () => {
+    it('should serialize Error objects', () => {
+      const error = new Error('Test error');
+      error.stack = 'Error: Test error\n    at test.js:1:1';
+
+      const serialized = serializeError(error);
+
+      expect(serialized).toEqual({
+        name: 'Error',
+        message: 'Test error',
+        stack: expect.stringContaining('Error: Test error'),
+      });
+    });
+
+    it('should serialize Error with cause', () => {
+      const cause = new Error('Cause error');
+      const error = new Error('Main error', { cause });
+
+      const serialized = serializeError(error);
+
+      expect(serialized).toHaveProperty('cause');
+      expect(serialized.cause).toEqual({
+        name: 'Error',
+        message: 'Cause error',
+        stack: expect.any(String),
+      });
+    });
+
+    it('should serialize string errors', () => {
+      const serialized = serializeError('String error');
+
+      expect(serialized).toEqual({ message: 'String error' });
+    });
+
+    it('should serialize unknown types', () => {
+      const serialized = serializeError(42);
+
+      expect(serialized).toEqual({ message: '42' });
+    });
+  });
+});
