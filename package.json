@@ -60,8 +60,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/logward-dev/logward-sdk-node.git",
-    "directory": "packages/sdk-node"
+    "url": "https://github.com/logward-dev/logward-sdk-node.git"
   },
   "homepage": "https://github.com/logward-dev/logward-sdk-node#readme",
   "bugs": {
@@ -70,12 +69,12 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
-    "fastify-plugin": "^4.5.1"
-  },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.15",
+    "express": "^5.1.0",
+    "fastify": "^5.6.2",
+    "fastify-plugin": "^4.5.1",
     "tsup": "^8.5.1",
     "typescript": "^5.5.4",
     "vitest": "^1.6.0"
