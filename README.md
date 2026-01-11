@@ -551,11 +551,11 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logtide/logtide-sdk-node).
+Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logtide-dev/logtide-sdk-node).
 
 ---
 
 ## Support
 
 - **Documentation**: [https://logtide.dev/docs](https://logtide.dev/docs)
-- **Issues**: [GitHub Issues](https://github.com/logtide/logtide-sdk-node/issues)
+- **Issues**: [GitHub Issues](https://github.com/logtide-dev/logtide-sdk-node/issues)

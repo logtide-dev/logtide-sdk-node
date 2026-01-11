@@ -60,11 +60,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/logtide/logtide-sdk-node.git"
+    "url": "https://github.com/logtide-dev/logtide-sdk-node.git"
   },
-  "homepage": "https://github.com/logtide/logtide-sdk-node#readme",
+  "homepage": "https://github.com/logtide-dev/logtide-sdk-node#readme",
   "bugs": {
-    "url": "https://github.com/logtide/logtide-sdk-node/issues"
+    "url": "https://github.com/logtide-dev/logtide-sdk-node/issues"
   },
   "publishConfig": {
     "access": "public"
