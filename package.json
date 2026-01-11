@@ -1,7 +1,7 @@
 {
-  "name": "@logward-dev/sdk-node",
+  "name": "@logtide/sdk-node",
   "version": "0.1.0",
-  "description": "Official Node.js SDK for LogWard (logward.dev) - Self-hosted log management with advanced features: retry logic, circuit breaker, query API, live streaming, and middleware support",
+  "description": "Official Node.js SDK for LogTide (logtide.dev) - Self-hosted log management with advanced features: retry logic, circuit breaker, query API, live streaming, and middleware support",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -44,7 +44,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "keywords": [
-    "logward",
+    "logtide",
     "logging",
     "logs",
     "log-management",
@@ -60,11 +60,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/logward-dev/logward-sdk-node.git"
+    "url": "https://github.com/logtide/logtide-sdk-node.git"
   },
-  "homepage": "https://github.com/logward-dev/logward-sdk-node#readme",
+  "homepage": "https://github.com/logtide/logtide-sdk-node#readme",
   "bugs": {
-    "url": "https://github.com/logward-dev/logward-sdk-node/issues"
+    "url": "https://github.com/logtide/logtide-sdk-node/issues"
   },
   "publishConfig": {
     "access": "public"

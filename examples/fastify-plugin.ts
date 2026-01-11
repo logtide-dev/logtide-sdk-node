@@ -1,12 +1,12 @@
 import Fastify from 'fastify';
-import { LogWardClient, logWardFastifyPlugin } from '../src/index.js';
+import { LogTideClient, logTideFastifyPlugin } from '../src/index.js';
 
 const fastify = Fastify({
   logger: false, // Disable Fastify's built-in logger
 });
 
-// Initialize LogWard client
-const logger = new LogWardClient({
+// Initialize LogTide client
+const logger = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
   globalMetadata: {
@@ -15,8 +15,8 @@ const logger = new LogWardClient({
   },
 });
 
-// Register LogWard plugin
-await fastify.register(logWardFastifyPlugin, {
+// Register LogTide plugin
+await fastify.register(logTideFastifyPlugin, {
   client: logger,
   serviceName: 'fastify-api',
   logRequests: true,

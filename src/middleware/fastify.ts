@@ -1,9 +1,9 @@
 import type { FastifyRequest, FastifyReply, FastifyPluginCallback } from 'fastify';
-import type { LogWardClient } from '../index.js';
+import type { LogTideClient } from '../index.js';
 import fp from 'fastify-plugin';
 
 export interface FastifyMiddlewareOptions {
-  client: LogWardClient;
+  client: LogTideClient;
   serviceName: string;
   logRequests?: boolean;
   logResponses?: boolean;
@@ -14,7 +14,7 @@ export interface FastifyMiddlewareOptions {
   skipHealthCheck?: boolean;
 }
 
-const logWardPlugin: FastifyPluginCallback<FastifyMiddlewareOptions> = (
+const logTidePlugin: FastifyPluginCallback<FastifyMiddlewareOptions> = (
   fastify,
   options,
   done,
@@ -119,9 +119,9 @@ const logWardPlugin: FastifyPluginCallback<FastifyMiddlewareOptions> = (
   done();
 };
 
-export const logWardFastifyPlugin = fp(logWardPlugin, {
+export const logTideFastifyPlugin = fp(logTidePlugin, {
   fastify: '4.x',
-  name: '@logward/fastify-plugin',
+  name: '@logtide/fastify-plugin',
 });
 
-export default logWardFastifyPlugin;
+export default logTideFastifyPlugin;

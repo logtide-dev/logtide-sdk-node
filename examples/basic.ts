@@ -1,6 +1,6 @@
-import { LogWardClient } from '../src/index.js';
+import { LogTideClient } from '../src/index.js';
 
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'your-api-key-here',
   batchSize: 50,

@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { LogWardClient } from '../index.js';
+import type { LogTideClient } from '../index.js';
 
 export interface ExpressMiddlewareOptions {
-  client: LogWardClient;
+  client: LogTideClient;
   serviceName: string;
   logRequests?: boolean;
   logResponses?: boolean;
@@ -13,7 +13,7 @@ export interface ExpressMiddlewareOptions {
   skipHealthCheck?: boolean;
 }
 
-export function logWardMiddleware(options: ExpressMiddlewareOptions) {
+export function logTideMiddleware(options: ExpressMiddlewareOptions) {
   const {
     client,
     serviceName,
@@ -114,4 +114,4 @@ export function logWardMiddleware(options: ExpressMiddlewareOptions) {
   };
 }
 
-export default logWardMiddleware;
+export default logTideMiddleware;

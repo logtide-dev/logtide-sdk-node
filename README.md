@@ -1,6 +1,6 @@
-# LogWard Node.js SDK
+# LogTide Node.js SDK
 
-Official Node.js SDK for LogWard with advanced features: retry logic, circuit breaker, query API, live streaming, and middleware support.
+Official Node.js SDK for LogTide with advanced features: retry logic, circuit breaker, query API, live streaming, and middleware support.
 
 ## Features
 
@@ -20,19 +20,19 @@ Official Node.js SDK for LogWard with advanced features: retry logic, circuit br
 ## Installation
 
 ```bash
-npm install @logward-dev/sdk-node
+npm install @logtide/sdk-node
 # or
-pnpm add @logward-dev/sdk-node
+pnpm add @logtide/sdk-node
 # or
-yarn add @logward-dev/sdk-node
+yarn add @logtide/sdk-node
 ```
 
 ## Quick Start
 
 ```typescript
-import { LogWardClient } from '@logward-dev/sdk-node';
+import { LogTideClient } from '@logtide/sdk-node';
 
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
 });
@@ -56,7 +56,7 @@ process.on('SIGINT', async () => {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `apiUrl` | `string` | **required** | Base URL of your LogWard instance |
+| `apiUrl` | `string` | **required** | Base URL of your LogTide instance |
 | `apiKey` | `string` | **required** | Project API key (starts with `lp_`) |
 | `batchSize` | `number` | `100` | Number of logs to batch before sending |
 | `flushInterval` | `number` | `5000` | Interval in ms to auto-flush logs |
@@ -78,7 +78,7 @@ process.on('SIGINT', async () => {
 ### Example: Full Configuration
 
 ```typescript
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
 
@@ -204,7 +204,7 @@ client.withNewTraceId(() => {
 ### Auto Trace ID Mode
 
 ```typescript
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
   autoTraceId: true, // Every log gets a unique trace ID
@@ -323,16 +323,16 @@ Auto-log all HTTP requests and responses.
 
 ```typescript
 import express from 'express';
-import { LogWardClient, logWardMiddleware } from '@logward-dev/sdk-node';
+import { LogTideClient, logTideMiddleware } from '@logtide/sdk-node';
 
 const app = express();
-const logger = new LogWardClient({
+const logger = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
 });
 
 app.use(
-  logWardMiddleware({
+  logTideMiddleware({
     client: logger,
     serviceName: 'express-api',
     logRequests: true,
@@ -361,15 +361,15 @@ app.listen(3000);
 
 ```typescript
 import Fastify from 'fastify';
-import { LogWardClient, logWardFastifyPlugin } from '@logward-dev/sdk-node';
+import { LogTideClient, logTideFastifyPlugin } from '@logtide/sdk-node';
 
 const fastify = Fastify();
-const logger = new LogWardClient({
+const logger = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
 });
 
-await fastify.register(logWardFastifyPlugin, {
+await fastify.register(logTideFastifyPlugin, {
   client: logger,
   serviceName: 'fastify-api',
   logRequests: true,
@@ -404,7 +404,7 @@ process.on('SIGTERM', async () => {
 ### 2. Use Global Metadata
 
 ```typescript
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
   globalMetadata: {
@@ -419,7 +419,7 @@ const client = new LogWardClient({
 ### 3. Enable Debug Mode in Development
 
 ```typescript
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
   debug: process.env.NODE_ENV === 'development',
@@ -459,11 +459,11 @@ app.use((req, res, next) => {
 
 ## API Reference
 
-### LogWardClient
+### LogTideClient
 
 #### Constructor
 ```typescript
-new LogWardClient(options: LogWardClientOptions)
+new LogTideClient(options: LogTideClientOptions)
 ```
 
 #### Logging Methods
@@ -516,12 +516,12 @@ Fully typed with strict TypeScript support:
 
 ```typescript
 import type {
-  LogWardClient,
+  LogTideClient,
   LogEntry,
   QueryOptions,
   LogsResponse,
   ClientMetrics,
-} from '@logward-dev/sdk-node';
+} from '@logtide/sdk-node';
 ```
 
 ---
@@ -551,11 +551,11 @@ MIT
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logward-dev/logward-sdk-node).
+Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logtide/logtide-sdk-node).
 
 ---
 
 ## Support
 
-- **Documentation**: [https://logward.dev/docs](https://logward.dev/docs)
-- **Issues**: [GitHub Issues](https://github.com/logward-dev/logward-sdk-node/issues)
+- **Documentation**: [https://logtide.dev/docs](https://logtide.dev/docs)
+- **Issues**: [GitHub Issues](https://github.com/logtide/logtide-sdk-node/issues)

@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 
-export interface LogWardClientOptions {
+export interface LogTideClientOptions {
   apiUrl: string;
   apiKey: string;
   batchSize?: number;
@@ -165,7 +165,7 @@ function normalizeTraceId(traceId: string | null | undefined, debug: boolean): s
   const newTraceId = randomUUID();
   if (debug) {
     console.warn(
-      `[LogWard] Invalid trace_id "${traceId}" (must be UUID v4). Generated new UUID: ${newTraceId}`,
+      `[LogTide] Invalid trace_id "${traceId}" (must be UUID v4). Generated new UUID: ${newTraceId}`,
     );
   }
   return newTraceId;
@@ -201,7 +201,7 @@ export function serializeError(error: unknown): Record<string, unknown> {
 
 // ==================== Main Client ====================
 
-export class LogWardClient {
+export class LogTideClient {
   private apiUrl: string;
   private apiKey: string;
   private batchSize: number;
@@ -232,7 +232,7 @@ export class LogWardClient {
   // Context tracking
   private currentTraceId: string | null = null;
 
-  constructor(options: LogWardClientOptions) {
+  constructor(options: LogTideClientOptions) {
     this.apiUrl = options.apiUrl.replace(/\/$/, '');
     this.apiKey = options.apiKey;
     this.batchSize = options.batchSize || 100;
@@ -303,7 +303,7 @@ export class LogWardClient {
     if (this.buffer.length >= this.maxBufferSize) {
       this.metrics.logsDropped++;
       if (this.debugMode) {
-        console.warn(`[LogWard] Buffer full, dropping log: ${entry.message}`);
+        console.warn(`[LogTide] Buffer full, dropping log: ${entry.message}`);
       }
       return;
     }
@@ -376,7 +376,7 @@ export class LogWardClient {
     if (!this.circuitBreaker.canAttempt()) {
       this.metrics.circuitBreakerTrips++;
       if (this.debugMode) {
-        console.warn('[LogWard] Circuit breaker OPEN, skipping flush');
+        console.warn('[LogTide] Circuit breaker OPEN, skipping flush');
       }
       return;
     }
@@ -418,7 +418,7 @@ export class LogWardClient {
         }
 
         if (this.debugMode) {
-          console.log(`[LogWard] Sent ${logs.length} logs successfully`);
+          console.log(`[LogTide] Sent ${logs.length} logs successfully`);
         }
 
         return;
@@ -431,7 +431,7 @@ export class LogWardClient {
           const delay = this.retryDelayMs * Math.pow(2, attempt);
           if (this.debugMode) {
             console.warn(
-              `[LogWard] Retry ${attempt + 1}/${this.maxRetries} after ${delay}ms: ${lastError.message}`,
+              `[LogTide] Retry ${attempt + 1}/${this.maxRetries} after ${delay}ms: ${lastError.message}`,
             );
           }
           await this.sleep(delay);
@@ -443,7 +443,7 @@ export class LogWardClient {
     this.circuitBreaker.recordFailure();
 
     if (this.debugMode) {
-      console.error(`[LogWard] Failed to send logs after ${this.maxRetries} retries:`, lastError);
+      console.error(`[LogTide] Failed to send logs after ${this.maxRetries} retries:`, lastError);
     }
 
     // Re-add logs to buffer if not full
@@ -605,4 +605,4 @@ export class LogWardClient {
   }
 }
 
-export default LogWardClient;
+export default LogTideClient;

@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { LogWardClient, serializeError } from '../src/index.js';
+import { LogTideClient, serializeError } from '../src/index.js';
 
 // Mock fetch globally
 global.fetch = vi.fn();
 
-describe('LogWardClient', () => {
-  let client: LogWardClient;
+describe('LogTideClient', () => {
+  let client: LogTideClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
 
-    client = new LogWardClient({
+    client = new LogTideClient({
       apiUrl: 'http://localhost:8080',
       apiKey: 'test-api-key',
       batchSize: 5,
@@ -196,7 +196,7 @@ describe('LogWardClient', () => {
       const mockFetch = vi.mocked(fetch);
       mockFetch.mockRejectedValue(new Error('Network error'));
 
-      const circuitBreakerClient = new LogWardClient({
+      const circuitBreakerClient = new LogTideClient({
         apiUrl: 'http://localhost:8080',
         apiKey: 'test-api-key',
         maxRetries: 0,
@@ -260,7 +260,7 @@ describe('LogWardClient', () => {
     });
 
     it('should auto-generate trace ID when enabled', () => {
-      const autoClient = new LogWardClient({
+      const autoClient = new LogTideClient({
         apiUrl: 'http://localhost:8080',
         apiKey: 'test-api-key',
         autoTraceId: true,
@@ -287,7 +287,7 @@ describe('LogWardClient', () => {
 
   describe('Global Metadata', () => {
     it('should add global metadata to all logs', async () => {
-      const clientWithGlobalMetadata = new LogWardClient({
+      const clientWithGlobalMetadata = new LogTideClient({
         apiUrl: 'http://localhost:8080',
         apiKey: 'test-api-key',
         globalMetadata: {

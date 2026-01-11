@@ -1,7 +1,7 @@
-import { LogWardClient } from '../src/index.js';
+import { LogTideClient } from '../src/index.js';
 
 // Initialize client with advanced options
-const client = new LogWardClient({
+const client = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
 
@@ -169,7 +169,7 @@ process.on('SIGTERM', gracefulShutdown);
 // ==================== Run Examples ====================
 
 async function main() {
-  console.log('LogWard SDK - Advanced Examples');
+  console.log('LogTide SDK - Advanced Examples');
   console.log('=================================\n');
 
   // Send some test logs

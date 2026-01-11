@@ -1,10 +1,10 @@
 import express from 'express';
-import { LogWardClient, logWardMiddleware } from '../src/index.js';
+import { LogTideClient, logTideMiddleware } from '../src/index.js';
 
 const app = express();
 
-// Initialize LogWard client
-const logger = new LogWardClient({
+// Initialize LogTide client
+const logger = new LogTideClient({
   apiUrl: 'http://localhost:8080',
   apiKey: 'lp_your_api_key_here',
   globalMetadata: {
@@ -13,9 +13,9 @@ const logger = new LogWardClient({
   },
 });
 
-// Use LogWard middleware
+// Use LogTide middleware
 app.use(
-  logWardMiddleware({
+  logTideMiddleware({
     client: logger,
     serviceName: 'express-api',
     logRequests: true,
