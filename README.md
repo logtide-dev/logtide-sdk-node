@@ -1,21 +1,36 @@
-# LogTide Node.js SDK
+<p align="center">
+  <img src="https://raw.githubusercontent.com/logtide-dev/logtide/main/docs/images/logo.png" alt="LogTide Logo" width="400">
+</p>
 
-Official Node.js SDK for LogTide with advanced features: retry logic, circuit breaker, query API, live streaming, and middleware support.
+<h1 align="center">LogTide Node.js SDK</h1>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@logtide/sdk-node"><img src="https://img.shields.io/npm/v/@logtide/sdk-node?color=blue" alt="npm"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-18+-green.svg" alt="Node.js"></a>
+  <a href="https://github.com/logtide-dev/logtide-sdk-node/releases"><img src="https://img.shields.io/github/v/release/logtide-dev/logtide-sdk-node" alt="Release"></a>
+</p>
+
+<p align="center">
+  Official Node.js SDK for <a href="https://logtide.dev">LogTide</a> with automatic batching, retry logic, circuit breaker, query API, live streaming, and middleware support.
+</p>
+
+---
 
 ## Features
 
-- ✅ **Automatic batching** with configurable size and interval
-- ✅ **Retry logic** with exponential backoff
-- ✅ **Circuit breaker** pattern for fault tolerance
-- ✅ **Max buffer size** with drop policy to prevent memory leaks
-- ✅ **Query API** for searching and filtering logs
-- ✅ **Live tail** with Server-Sent Events (SSE)
-- ✅ **Trace ID context** for distributed tracing
-- ✅ **Global metadata** added to all logs
-- ✅ **Structured error serialization**
-- ✅ **Internal metrics** (logs sent, errors, latency, etc.)
-- ✅ **Express & Fastify middleware** for auto-logging HTTP requests
-- ✅ **Full TypeScript support** with strict types
+- **Automatic batching** with configurable size and interval
+- **Retry logic** with exponential backoff
+- **Circuit breaker** pattern for fault tolerance
+- **Max buffer size** with drop policy to prevent memory leaks
+- **Query API** for searching and filtering logs
+- **Live tail** with Server-Sent Events (SSE)
+- **Trace ID context** for distributed tracing
+- **Global metadata** added to all logs
+- **Structured error serialization**
+- **Internal metrics** (logs sent, errors, latency, etc.)
+- **Express & Fastify middleware** for auto-logging HTTP requests
+- **Full TypeScript support** with strict types
 
 ## Installation
 
@@ -89,7 +104,7 @@ const client = new LogTideClient({
   // Buffer management
   maxBufferSize: 10000,
 
-  // Retry with exponential backoff (1s → 2s → 4s)
+  // Retry with exponential backoff (1s -> 2s -> 4s)
   maxRetries: 3,
   retryDelayMs: 1000,
 
@@ -158,9 +173,9 @@ client.log({
   service: 'custom-service',
   level: 'info',
   message: 'Custom log',
-  time: new Date().toISOString(), // Optional
+  time: new Date().toISOString(),
   metadata: { key: 'value' },
-  trace_id: 'custom-trace-id', // Optional
+  trace_id: 'custom-trace-id',
 });
 ```
 
@@ -198,16 +213,6 @@ client.withTraceId('request-456', () => {
 client.withNewTraceId(() => {
   client.info('worker', 'Background job started');
   client.info('worker', 'Job completed');
-});
-```
-
-### Auto Trace ID Mode
-
-```typescript
-const client = new LogTideClient({
-  apiUrl: 'http://localhost:8080',
-  apiKey: 'lp_your_api_key_here',
-  autoTraceId: true, // Every log gets a unique trace ID
 });
 ```
 
@@ -315,7 +320,9 @@ client.resetMetrics();
 
 ---
 
-## Middleware
+## Middleware Integration
+
+LogTide provides ready-to-use middleware for popular frameworks.
 
 ### Express Middleware
 
@@ -385,6 +392,17 @@ await fastify.listen({ port: 3000 });
 
 ---
 
+## Examples
+
+See the [examples/](./examples) directory for complete working examples:
+
+- **[basic.ts](./examples/basic.ts)** - Simple usage
+- **[advanced.ts](./examples/advanced.ts)** - All advanced features
+- **[express-middleware.ts](./examples/express-middleware.ts)** - Express integration
+- **[fastify-plugin.ts](./examples/fastify-plugin.ts)** - Fastify integration
+
+---
+
 ## Best Practices
 
 ### 1. Always Close on Shutdown
@@ -442,72 +460,6 @@ setInterval(() => {
 }, 60000);
 ```
 
-### 5. Use Trace IDs for Request Correlation
-
-```typescript
-app.use((req, res, next) => {
-  const traceId = req.headers['x-trace-id'] || randomUUID();
-  req.traceId = traceId;
-
-  client.withTraceId(traceId, () => {
-    next();
-  });
-});
-```
-
----
-
-## API Reference
-
-### LogTideClient
-
-#### Constructor
-```typescript
-new LogTideClient(options: LogTideClientOptions)
-```
-
-#### Logging Methods
-- `log(entry: LogEntry): void`
-- `debug(service: string, message: string, metadata?: object): void`
-- `info(service: string, message: string, metadata?: object): void`
-- `warn(service: string, message: string, metadata?: object): void`
-- `error(service: string, message: string, metadataOrError?: object | Error): void`
-- `critical(service: string, message: string, metadataOrError?: object | Error): void`
-
-#### Context Methods
-- `setTraceId(traceId: string | null): void`
-- `getTraceId(): string | null`
-- `withTraceId<T>(traceId: string, fn: () => T): T`
-- `withNewTraceId<T>(fn: () => T): T`
-
-#### Query Methods
-- `query(options: QueryOptions): Promise<LogsResponse>`
-- `getByTraceId(traceId: string): Promise<InternalLogEntry[]>`
-- `getAggregatedStats(options: AggregatedStatsOptions): Promise<AggregatedStatsResponse>`
-
-#### Streaming
-- `stream(options: StreamOptions): () => void` (returns cleanup function)
-
-#### Metrics
-- `getMetrics(): ClientMetrics`
-- `resetMetrics(): void`
-- `getCircuitBreakerState(): string`
-
-#### Lifecycle
-- `flush(): Promise<void>`
-- `close(): Promise<void>`
-
----
-
-## Examples
-
-See the [examples/](./examples) directory for complete working examples:
-
-- **[basic.ts](./examples/basic.ts)** - Simple usage
-- **[advanced.ts](./examples/advanced.ts)** - All advanced features
-- **[express-middleware.ts](./examples/express-middleware.ts)** - Express integration
-- **[fastify-plugin.ts](./examples/fastify-plugin.ts)** - Fastify integration
-
 ---
 
 ## TypeScript Support
@@ -526,36 +478,16 @@ import type {
 
 ---
 
-## Testing
+## Contributing
 
-Run the test suite:
-
-```bash
-# Run tests
-pnpm test
-
-# Watch mode
-pnpm test:watch
-
-# Coverage
-pnpm test:coverage
-```
-
----
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) for details.
 
----
+## Links
 
-## Contributing
-
-Contributions are welcome! Please open an issue or PR on [GitHub](https://github.com/logtide-dev/logtide-sdk-node).
-
----
-
-## Support
-
-- **Documentation**: [https://logtide.dev/docs](https://logtide.dev/docs)
-- **Issues**: [GitHub Issues](https://github.com/logtide-dev/logtide-sdk-node/issues)
+- [LogTide Website](https://logtide.dev)
+- [Documentation](https://logtide.dev/docs/sdks/node/)
+- [GitHub Issues](https://github.com/logtide-dev/logtide-sdk-node/issues)
