@@ -94,9 +94,11 @@ describe('LogTideClient', () => {
         client.info('test-service', `Message ${i}`);
       }
 
-      await vi.runAllTimersAsync();
-
-      expect(mockFetch).toHaveBeenCalled();
+      // The flush is triggered synchronously when batch size is reached,
+      // but fetch is async, so we need to wait for the promise to resolve
+      await vi.waitFor(() => {
+        expect(mockFetch).toHaveBeenCalled();
+      });
     });
 
     it('should auto-flush on interval', async () => {
@@ -124,16 +126,25 @@ describe('LogTideClient', () => {
   });
 
   describe('Max Buffer Size', () => {
-    it('should drop logs when buffer is full', () => {
-      const mockFetch = vi.mocked(fetch);
+    it('should drop logs when buffer is full', async () => {
+      // Create client with batchSize > maxBufferSize to prevent auto-flush
+      const bufferClient = new LogTideClient({
+        apiUrl: 'http://localhost:8080',
+        apiKey: 'test-api-key',
+        batchSize: 100, // High batch size to prevent auto-flush
+        maxBufferSize: 10,
+        flushInterval: 60000, // Long interval to prevent timer flush
+      });
 
       // Fill buffer beyond max (10 logs)
       for (let i = 0; i < 15; i++) {
-        client.info('test-service', `Message ${i}`);
+        bufferClient.info('test-service', `Message ${i}`);
       }
 
-      const metrics = client.getMetrics();
-      expect(metrics.logsDropped).toBeGreaterThan(0);
+      const metrics = bufferClient.getMetrics();
+      expect(metrics.logsDropped).toBe(5); // 15 - 10 = 5 dropped
+
+      await bufferClient.close();
     });
   });
 
@@ -173,54 +184,36 @@ describe('LogTideClient', () => {
       // Always fail
       mockFetch.mockRejectedValue(new Error('Network error'));
 
-      client.info('test-service', 'Test message');
+      // Create a dedicated client for this test with long flush interval
+      const retryClient = new LogTideClient({
+        apiUrl: 'http://localhost:8080',
+        apiKey: 'test-api-key',
+        batchSize: 5,
+        flushInterval: 60000, // Long interval to prevent interference
+        maxRetries: 2,
+        retryDelayMs: 100,
+      });
 
-      const flushPromise = client.flush();
+      retryClient.info('test-service', 'Test message');
 
-      await vi.advanceTimersByTimeAsync(100);
-      await vi.advanceTimersByTimeAsync(200);
-      await vi.advanceTimersByTimeAsync(400);
+      const flushPromise = retryClient.flush();
+
+      // Advance timers for all retries
+      await vi.advanceTimersByTimeAsync(100); // First retry
+      await vi.advanceTimersByTimeAsync(200); // Second retry
 
       await flushPromise;
 
       expect(mockFetch).toHaveBeenCalledTimes(3); // maxRetries = 2, so 3 total attempts
 
-      const metrics = client.getMetrics();
+      const metrics = retryClient.getMetrics();
       expect(metrics.errors).toBeGreaterThan(0);
       expect(metrics.logsSent).toBe(0);
-    });
-  });
 
-  describe('Circuit Breaker', () => {
-    it('should open circuit after threshold failures', async () => {
-      const mockFetch = vi.mocked(fetch);
-      mockFetch.mockRejectedValue(new Error('Network error'));
-
-      const circuitBreakerClient = new LogTideClient({
-        apiUrl: 'http://localhost:8080',
-        apiKey: 'test-api-key',
-        maxRetries: 0,
-        circuitBreakerThreshold: 2,
-        circuitBreakerResetMs: 5000,
-      });
-
-      // Fail twice to open circuit
-      circuitBreakerClient.info('test-service', 'Message 1');
-      await circuitBreakerClient.flush();
-
-      circuitBreakerClient.info('test-service', 'Message 2');
-      await circuitBreakerClient.flush();
-
-      expect(circuitBreakerClient.getCircuitBreakerState()).toBe('OPEN');
-
-      // Next flush should be skipped
-      circuitBreakerClient.info('test-service', 'Message 3');
-      await circuitBreakerClient.flush();
-
-      const metrics = circuitBreakerClient.getMetrics();
-      expect(metrics.circuitBreakerTrips).toBeGreaterThan(0);
-
-      await circuitBreakerClient.close();
+      // Clean up without waiting for flush (buffer was already processed)
+      vi.useRealTimers();
+      await retryClient.close();
+      vi.useFakeTimers();
     });
   });
 
@@ -404,5 +397,46 @@ describe('LogTideClient', () => {
 
       expect(serialized).toEqual({ message: '42' });
     });
+  });
+});
+
+// Separate describe for Circuit Breaker tests - uses real timers to avoid issues with rejected promises
+describe('LogTideClient Circuit Breaker', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should open circuit after threshold failures', { timeout: 20000 }, async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    const circuitBreakerClient = new LogTideClient({
+      apiUrl: 'http://localhost:8080',
+      apiKey: 'test-api-key',
+      maxRetries: 0,
+      circuitBreakerThreshold: 2,
+      circuitBreakerResetMs: 1000,
+      flushInterval: 300000, // Very long interval to prevent interference
+    });
+
+    // Fail twice to open circuit
+    circuitBreakerClient.info('test-service', 'Message 1');
+    await circuitBreakerClient.flush();
+
+    circuitBreakerClient.info('test-service', 'Message 2');
+    await circuitBreakerClient.flush();
+
+    expect(circuitBreakerClient.getCircuitBreakerState()).toBe('OPEN');
+
+    // Next flush should be skipped (circuit is open)
+    circuitBreakerClient.info('test-service', 'Message 3');
+    await circuitBreakerClient.flush(); // This returns immediately when circuit is open
+
+    const metrics = circuitBreakerClient.getMetrics();
+    expect(metrics.circuitBreakerTrips).toBeGreaterThan(0);
+
+    // Cleanup: clear the timer manually
+    // @ts-expect-error accessing private property for cleanup
+    if (circuitBreakerClient.timer) clearInterval(circuitBreakerClient.timer);
   });
 });

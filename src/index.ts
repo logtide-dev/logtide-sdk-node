@@ -4,6 +4,20 @@ import { randomUUID } from 'crypto';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 
+export interface ConsoleInterceptOptions {
+  enabled: boolean;
+  service?: string;
+  preserveOriginal?: boolean;
+  includeStackTrace?: boolean;
+  levels?: {
+    log?: boolean;
+    info?: boolean;
+    warn?: boolean;
+    error?: boolean;
+    debug?: boolean;
+  };
+}
+
 export interface LogTideClientOptions {
   apiUrl: string;
   apiKey: string;
@@ -18,6 +32,7 @@ export interface LogTideClientOptions {
   debug?: boolean;
   globalMetadata?: Record<string, unknown>;
   autoTraceId?: boolean;
+  interceptConsole?: ConsoleInterceptOptions;
 }
 
 export interface LogEntry {
@@ -138,38 +153,6 @@ class CircuitBreaker {
   }
 }
 
-// ==================== UUID Validation ====================
-
-/**
- * Validates if a string is a valid UUID (v4)
- */
-function isValidUUID(str: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(str);
-}
-
-/**
- * Normalizes a trace_id to ensure it's a valid UUID.
- * If invalid, generates a new UUID and warns in debug mode.
- */
-function normalizeTraceId(traceId: string | null | undefined, debug: boolean): string | undefined {
-  if (!traceId) {
-    return undefined;
-  }
-
-  if (isValidUUID(traceId)) {
-    return traceId;
-  }
-
-  // Invalid UUID - generate a new one
-  const newTraceId = randomUUID();
-  if (debug) {
-    console.warn(
-      `[LogTide] Invalid trace_id "${traceId}" (must be UUID v4). Generated new UUID: ${newTraceId}`,
-    );
-  }
-  return newTraceId;
-}
 
 // ==================== Error Serialization ====================
 
@@ -232,6 +215,16 @@ export class LogTideClient {
   // Context tracking
   private currentTraceId: string | null = null;
 
+  // Console interception
+  private consoleInterceptOptions: ConsoleInterceptOptions | null = null;
+  private originalConsole: {
+    log: typeof console.log;
+    info: typeof console.info;
+    warn: typeof console.warn;
+    error: typeof console.error;
+    debug: typeof console.debug;
+  } | null = null;
+
   constructor(options: LogTideClientOptions) {
     this.apiUrl = options.apiUrl.replace(/\/$/, '');
     this.apiKey = options.apiKey;
@@ -251,16 +244,20 @@ export class LogTideClient {
     );
 
     this.startFlushTimer();
+
+    // Start console interception if configured
+    if (options.interceptConsole?.enabled) {
+      this.startConsoleInterception(options.interceptConsole);
+    }
   }
 
   // ==================== Context Helpers ====================
 
   /**
    * Set trace ID for subsequent logs
-   * Automatically validates and normalizes to UUID v4
    */
   setTraceId(traceId: string | null) {
-    this.currentTraceId = normalizeTraceId(traceId, this.debugMode) || null;
+    this.currentTraceId = traceId;
   }
 
   /**
@@ -290,6 +287,178 @@ export class LogTideClient {
     return this.withTraceId(randomUUID(), fn);
   }
 
+  // ==================== Console Interception ====================
+
+  /**
+   * Start intercepting console methods and forward them to LogTide
+   */
+  startConsoleInterception(options?: Partial<ConsoleInterceptOptions>) {
+    if (this.originalConsole) {
+      // Already intercepting
+      return;
+    }
+
+    const config: ConsoleInterceptOptions = {
+      enabled: true,
+      service: options?.service ?? 'console',
+      preserveOriginal: options?.preserveOriginal ?? true,
+      includeStackTrace: options?.includeStackTrace ?? false,
+      levels: {
+        log: options?.levels?.log ?? true,
+        info: options?.levels?.info ?? true,
+        warn: options?.levels?.warn ?? true,
+        error: options?.levels?.error ?? true,
+        debug: options?.levels?.debug ?? true,
+      },
+    };
+
+    this.consoleInterceptOptions = config;
+
+    // Save original console methods
+    this.originalConsole = {
+      log: console.log.bind(console),
+      info: console.info.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+      debug: console.debug.bind(console),
+    };
+
+    const createInterceptor = (
+      method: 'log' | 'info' | 'warn' | 'error' | 'debug',
+      level: LogLevel,
+    ) => {
+      const original = this.originalConsole![method];
+
+      return (...args: unknown[]) => {
+        // Always call original if preserveOriginal is true
+        if (config.preserveOriginal) {
+          original(...args);
+        }
+
+        // Skip if this method is not configured for interception
+        if (!config.levels?.[method]) {
+          return;
+        }
+
+        // Skip internal LogTide logs to prevent infinite loops
+        const message = args
+          .map((arg) => {
+            if (typeof arg === 'string') return arg;
+            if (arg instanceof Error) return arg.message;
+            try {
+              return JSON.stringify(arg);
+            } catch {
+              return String(arg);
+            }
+          })
+          .join(' ');
+
+        if (message.startsWith('[LogTide]')) {
+          return;
+        }
+
+        // Build metadata
+        const metadata: Record<string, unknown> = {
+          source: 'console',
+          originalMethod: method,
+        };
+
+        // Include stack trace if configured
+        if (config.includeStackTrace) {
+          const stack = new Error().stack;
+          if (stack) {
+            // Remove the first two lines (Error + this interceptor function)
+            const stackLines = stack.split('\n').slice(2);
+            metadata.stackTrace = stackLines.join('\n');
+
+            // Extract caller location from first relevant stack line
+            const callerLine = stackLines[0];
+            if (callerLine) {
+              const match = callerLine.match(/at\s+(.+?)\s+\((.+):(\d+):(\d+)\)/);
+              if (match) {
+                metadata.caller = {
+                  function: match[1],
+                  file: match[2],
+                  line: parseInt(match[3], 10),
+                  column: parseInt(match[4], 10),
+                };
+              } else {
+                // Try alternative format: "at file:line:column"
+                const altMatch = callerLine.match(/at\s+(.+):(\d+):(\d+)/);
+                if (altMatch) {
+                  metadata.caller = {
+                    file: altMatch[1],
+                    line: parseInt(altMatch[2], 10),
+                    column: parseInt(altMatch[3], 10),
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        // Include raw arguments for complex objects
+        if (args.length > 1 || (args.length === 1 && typeof args[0] !== 'string')) {
+          metadata.args = args.map((arg) => {
+            if (arg instanceof Error) {
+              return serializeError(arg);
+            }
+            return arg;
+          });
+        }
+
+        // Log to LogTide
+        this.log({
+          service: config.service!,
+          level,
+          message,
+          metadata,
+        });
+      };
+    };
+
+    // Replace console methods
+    console.log = createInterceptor('log', 'info');
+    console.info = createInterceptor('info', 'info');
+    console.warn = createInterceptor('warn', 'warn');
+    console.error = createInterceptor('error', 'error');
+    console.debug = createInterceptor('debug', 'debug');
+
+    if (this.debugMode) {
+      this.originalConsole.log('[LogTide] Console interception started');
+    }
+  }
+
+  /**
+   * Stop intercepting console methods and restore originals
+   */
+  stopConsoleInterception() {
+    if (!this.originalConsole) {
+      return;
+    }
+
+    // Restore original console methods
+    console.log = this.originalConsole.log;
+    console.info = this.originalConsole.info;
+    console.warn = this.originalConsole.warn;
+    console.error = this.originalConsole.error;
+    console.debug = this.originalConsole.debug;
+
+    if (this.debugMode) {
+      console.log('[LogTide] Console interception stopped');
+    }
+
+    this.originalConsole = null;
+    this.consoleInterceptOptions = null;
+  }
+
+  /**
+   * Check if console interception is active
+   */
+  isConsoleInterceptionActive(): boolean {
+    return this.originalConsole !== null;
+  }
+
   // ==================== Logging Methods ====================
 
   private startFlushTimer() {
@@ -308,11 +477,8 @@ export class LogTideClient {
       return;
     }
 
-    // Normalize trace_id to ensure it's a valid UUID
-    const normalizedTraceId =
-      normalizeTraceId(entry.trace_id, this.debugMode) ||
-      normalizeTraceId(this.currentTraceId, this.debugMode) ||
-      (this.autoTraceId ? randomUUID() : undefined);
+    // Determine trace_id: use entry's trace_id, current context, or auto-generate if enabled
+    const traceId = entry.trace_id || this.currentTraceId || (this.autoTraceId ? randomUUID() : undefined);
 
     const internalEntry: InternalLogEntry = {
       ...entry,
@@ -321,7 +487,7 @@ export class LogTideClient {
         ...this.globalMetadata,
         ...entry.metadata,
       },
-      trace_id: normalizedTraceId,
+      trace_id: traceId,
     };
 
     this.buffer.push(internalEntry);
@@ -601,6 +767,7 @@ export class LogTideClient {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.stopConsoleInterception();
     await this.flush();
   }
 }
