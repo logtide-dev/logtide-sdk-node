@@ -18,6 +18,17 @@ export interface ConsoleInterceptOptions {
   };
 }
 
+export interface PayloadLimitsOptions {
+  /** Maximum size in bytes for a single field value (default: 10KB) */
+  maxFieldSize?: number;
+  /** Maximum size in bytes for the entire log entry (default: 100KB) */
+  maxLogSize?: number;
+  /** Fields to exclude from metadata (e.g., ['body', 'requestBody', 'responseBody']) */
+  excludeFields?: string[];
+  /** Marker to append when a field is truncated (default: '...[TRUNCATED]') */
+  truncationMarker?: string;
+}
+
 export interface LogTideClientOptions {
   apiUrl: string;
   apiKey: string;
@@ -33,6 +44,8 @@ export interface LogTideClientOptions {
   globalMetadata?: Record<string, unknown>;
   autoTraceId?: boolean;
   interceptConsole?: ConsoleInterceptOptions;
+  /** Payload size limits to prevent 413 errors */
+  payloadLimits?: PayloadLimitsOptions;
 }
 
 export interface LogEntry {
@@ -225,6 +238,9 @@ export class LogTideClient {
     debug: typeof console.debug;
   } | null = null;
 
+  // Payload limits
+  private payloadLimits: Required<PayloadLimitsOptions>;
+
   constructor(options: LogTideClientOptions) {
     this.apiUrl = options.apiUrl.replace(/\/$/, '');
     this.apiKey = options.apiKey;
@@ -242,6 +258,14 @@ export class LogTideClient {
       options.circuitBreakerThreshold || 5,
       options.circuitBreakerResetMs || 30000,
     );
+
+    // Initialize payload limits with defaults
+    this.payloadLimits = {
+      maxFieldSize: options.payloadLimits?.maxFieldSize ?? 10 * 1024, // 10KB
+      maxLogSize: options.payloadLimits?.maxLogSize ?? 100 * 1024, // 100KB
+      excludeFields: options.payloadLimits?.excludeFields ?? [],
+      truncationMarker: options.payloadLimits?.truncationMarker ?? '...[TRUNCATED]',
+    };
 
     this.startFlushTimer();
 
@@ -459,6 +483,96 @@ export class LogTideClient {
     return this.originalConsole !== null;
   }
 
+  // ==================== Payload Processing ====================
+
+  /**
+   * Check if a string looks like base64 encoded data
+   */
+  private looksLikeBase64(str: string): boolean {
+    if (typeof str !== 'string' || str.length < 100) return false;
+    // Check for common base64 patterns: data URLs or long base64 strings
+    if (str.startsWith('data:')) return true;
+    // Check if it's a long string with only base64 characters
+    const base64Regex = /^[A-Za-z0-9+/=]{100,}$/;
+    return base64Regex.test(str.replace(/\s/g, ''));
+  }
+
+  /**
+   * Process a value for payload limits (truncation, base64 removal, etc.)
+   */
+  private processValue(value: unknown, fieldPath: string): unknown {
+    // Check if this field should be excluded
+    const fieldName = fieldPath.split('.').pop() || fieldPath;
+    if (this.payloadLimits.excludeFields.includes(fieldName)) {
+      return '[EXCLUDED]';
+    }
+
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      // Check for base64 data
+      if (this.looksLikeBase64(value)) {
+        return '[BASE64 DATA REMOVED]';
+      }
+      // Truncate if too long
+      if (value.length > this.payloadLimits.maxFieldSize) {
+        return value.substring(0, this.payloadLimits.maxFieldSize) + this.payloadLimits.truncationMarker;
+      }
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item, index) => this.processValue(item, `${fieldPath}[${index}]`));
+    }
+
+    if (typeof value === 'object') {
+      const processed: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+        processed[key] = this.processValue(val, `${fieldPath}.${key}`);
+      }
+      return processed;
+    }
+
+    return value;
+  }
+
+  /**
+   * Process metadata to apply payload limits
+   */
+  private processMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+    if (!metadata) return metadata;
+    return this.processValue(metadata, 'metadata') as Record<string, unknown>;
+  }
+
+  /**
+   * Ensure log entry doesn't exceed max size
+   */
+  private enforceMaxLogSize(entry: InternalLogEntry): InternalLogEntry {
+    const serialized = JSON.stringify(entry);
+    if (serialized.length <= this.payloadLimits.maxLogSize) {
+      return entry;
+    }
+
+    // Log is too large, progressively truncate metadata
+    if (this.debugMode) {
+      console.warn(`[LogTide] Log entry too large (${serialized.length} bytes), truncating metadata`);
+    }
+
+    // Create a copy and truncate metadata heavily
+    const truncated: InternalLogEntry = {
+      ...entry,
+      metadata: {
+        _truncated: true,
+        _originalSize: serialized.length,
+        message: entry.message,
+      },
+    };
+
+    return truncated;
+  }
+
   // ==================== Logging Methods ====================
 
   private startFlushTimer() {
@@ -480,15 +594,22 @@ export class LogTideClient {
     // Determine trace_id: use entry's trace_id, current context, or auto-generate if enabled
     const traceId = entry.trace_id || this.currentTraceId || (this.autoTraceId ? randomUUID() : undefined);
 
-    const internalEntry: InternalLogEntry = {
+    // Merge and process metadata (applies truncation, exclusion, base64 removal)
+    const mergedMetadata = {
+      ...this.globalMetadata,
+      ...entry.metadata,
+    };
+    const processedMetadata = this.processMetadata(mergedMetadata);
+
+    let internalEntry: InternalLogEntry = {
       ...entry,
       time: entry.time || new Date().toISOString(),
-      metadata: {
-        ...this.globalMetadata,
-        ...entry.metadata,
-      },
+      metadata: processedMetadata,
       trace_id: traceId,
     };
+
+    // Enforce max log size
+    internalEntry = this.enforceMaxLogSize(internalEntry);
 
     this.buffer.push(internalEntry);
 
