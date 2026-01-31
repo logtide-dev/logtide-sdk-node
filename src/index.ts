@@ -167,32 +167,164 @@ class CircuitBreaker {
 }
 
 
+// ==================== Structured Exception Types ====================
+
+export interface StructuredStackFrame {
+  /** File path or module name */
+  file?: string;
+  /** Function/method name */
+  function?: string;
+  /** Line number (1-based) */
+  line?: number;
+  /** Column number */
+  column?: number;
+  /** Additional frame metadata */
+  metadata?: Record<string, unknown>;
+}
+
+export interface StructuredException {
+  /** Exception type/class name (e.g., "TypeError", "Error") */
+  type: string;
+  /** Human-readable error message */
+  message: string;
+  /** Stack trace as an array of frames (top to bottom) */
+  stacktrace?: StructuredStackFrame[];
+  /** Language hint for better fingerprinting */
+  language?: string;
+  /** Inner/cause exception (for wrapped exceptions) */
+  cause?: StructuredException;
+  /** Additional exception metadata */
+  metadata?: Record<string, unknown>;
+  /** Original raw stack trace as a string (fallback) */
+  raw?: string;
+}
+
 // ==================== Error Serialization ====================
 
-export function serializeError(error: unknown): Record<string, unknown> {
+/**
+ * Parse a V8/Node.js stack trace string into structured frames
+ */
+function parseNodeStackTrace(stack: string | undefined): StructuredStackFrame[] {
+  if (!stack) return [];
+
+  const frames: StructuredStackFrame[] = [];
+  const lines = stack.split('\n');
+
+  for (const line of lines) {
+    // Skip the first line (error message) and empty lines
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('at ')) continue;
+
+    // Format 1: "at functionName (file:line:column)"
+    const match1 = trimmed.match(/^at\s+(.+?)\s+\((.+):(\d+):(\d+)\)$/);
+    if (match1) {
+      frames.push({
+        function: match1[1],
+        file: match1[2],
+        line: parseInt(match1[3], 10),
+        column: parseInt(match1[4], 10),
+      });
+      continue;
+    }
+
+    // Format 2: "at file:line:column" (anonymous function)
+    const match2 = trimmed.match(/^at\s+(.+):(\d+):(\d+)$/);
+    if (match2) {
+      frames.push({
+        file: match2[1],
+        line: parseInt(match2[2], 10),
+        column: parseInt(match2[3], 10),
+      });
+      continue;
+    }
+
+    // Format 3: "at functionName (native)" or similar
+    const match3 = trimmed.match(/^at\s+(.+?)\s+\((.+)\)$/);
+    if (match3) {
+      frames.push({
+        function: match3[1],
+        file: match3[2],
+      });
+      continue;
+    }
+
+    // Format 4: "at functionName" (no file info)
+    const match4 = trimmed.match(/^at\s+(.+)$/);
+    if (match4) {
+      frames.push({
+        function: match4[1],
+      });
+    }
+  }
+
+  return frames;
+}
+
+/**
+ * Serialize an error into the StructuredException format
+ */
+export function serializeError(error: unknown): StructuredException {
   if (error instanceof Error) {
-    const result: Record<string, unknown> = {
-      name: error.name,
+    const result: StructuredException = {
+      type: error.name,
       message: error.message,
-      stack: error.stack,
+      language: 'nodejs',
+      stacktrace: parseNodeStackTrace(error.stack),
+      raw: error.stack,
     };
 
+    // Handle error.cause (Node.js 16.9+)
     if (error.cause) {
       result.cause = serializeError(error.cause);
+    }
+
+    // Extract additional error properties as metadata
+    const errorMetadata: Record<string, unknown> = {};
+    const standardProps = ['name', 'message', 'stack', 'cause'];
+
+    for (const key of Object.keys(error)) {
+      if (!standardProps.includes(key)) {
+        errorMetadata[key] = (error as unknown as Record<string, unknown>)[key];
+      }
+    }
+
+    // Include common Node.js error properties
+    if ('code' in error) errorMetadata.code = (error as NodeJS.ErrnoException).code;
+    if ('errno' in error) errorMetadata.errno = (error as NodeJS.ErrnoException).errno;
+    if ('syscall' in error) errorMetadata.syscall = (error as NodeJS.ErrnoException).syscall;
+    if ('path' in error) errorMetadata.path = (error as NodeJS.ErrnoException).path;
+
+    if (Object.keys(errorMetadata).length > 0) {
+      result.metadata = errorMetadata;
     }
 
     return result;
   }
 
   if (typeof error === 'string') {
-    return { message: error };
+    return {
+      type: 'Error',
+      message: error,
+      language: 'nodejs',
+    };
   }
 
   if (typeof error === 'object' && error !== null) {
-    return error as Record<string, unknown>;
+    // Try to extract type and message from the object
+    const obj = error as Record<string, unknown>;
+    return {
+      type: (typeof obj.type === 'string' ? obj.type : typeof obj.name === 'string' ? obj.name : 'Error'),
+      message: (typeof obj.message === 'string' ? obj.message : JSON.stringify(error)),
+      language: 'nodejs',
+      metadata: obj,
+    };
   }
 
-  return { message: String(error) };
+  return {
+    type: 'Error',
+    message: String(error),
+    language: 'nodejs',
+  };
 }
 
 // ==================== Main Client ====================
@@ -431,6 +563,14 @@ export class LogTideClient {
           });
         }
 
+        // For error level, if any argument is an Error, add it to metadata.exception
+        if (level === 'error' || level === 'critical') {
+          const errorArg = args.find((arg) => arg instanceof Error);
+          if (errorArg instanceof Error) {
+            metadata.exception = serializeError(errorArg);
+          }
+        }
+
         // Log to LogTide
         this.log({
           service: config.service!,
@@ -634,7 +774,7 @@ export class LogTideClient {
     let metadata: Record<string, unknown> = {};
 
     if (metadataOrError instanceof Error) {
-      metadata = { error: serializeError(metadataOrError) };
+      metadata = { exception: serializeError(metadataOrError) };
     } else if (metadataOrError) {
       metadata = metadataOrError;
     }
@@ -646,7 +786,7 @@ export class LogTideClient {
     let metadata: Record<string, unknown> = {};
 
     if (metadataOrError instanceof Error) {
-      metadata = { error: serializeError(metadataOrError) };
+      metadata = { exception: serializeError(metadataOrError) };
     } else if (metadataOrError) {
       metadata = metadataOrError;
     }

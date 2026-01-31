@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { LogTideClient, serializeError } from '../src/index.js';
+import { LogTideClient, serializeError, StructuredException } from '../src/index.js';
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -72,10 +72,23 @@ describe('LogTideClient', () => {
 
       client.flush();
 
+      // Should use new StructuredException format with "exception" key and "type" field
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          body: expect.stringContaining('"name":"Error"'),
+          body: expect.stringContaining('"exception"'),
+        }),
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"type":"Error"'),
+        }),
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"language":"nodejs"'),
         }),
       );
     });
@@ -359,43 +372,91 @@ describe('LogTideClient', () => {
   });
 
   describe('Error Serialization', () => {
-    it('should serialize Error objects', () => {
+    it('should serialize Error objects to StructuredException format', () => {
       const error = new Error('Test error');
       error.stack = 'Error: Test error\n    at test.js:1:1';
 
       const serialized = serializeError(error);
 
       expect(serialized).toEqual({
-        name: 'Error',
+        type: 'Error',
         message: 'Test error',
-        stack: expect.stringContaining('Error: Test error'),
+        language: 'nodejs',
+        stacktrace: [
+          { file: 'test.js', line: 1, column: 1 },
+        ],
+        raw: 'Error: Test error\n    at test.js:1:1',
       });
     });
 
     it('should serialize Error with cause', () => {
       const cause = new Error('Cause error');
+      cause.stack = 'Error: Cause error\n    at cause.js:10:5';
       const error = new Error('Main error', { cause });
+      error.stack = 'Error: Main error\n    at main.js:20:10';
 
       const serialized = serializeError(error);
 
       expect(serialized).toHaveProperty('cause');
       expect(serialized.cause).toEqual({
-        name: 'Error',
+        type: 'Error',
         message: 'Cause error',
-        stack: expect.any(String),
+        language: 'nodejs',
+        stacktrace: [
+          { file: 'cause.js', line: 10, column: 5 },
+        ],
+        raw: 'Error: Cause error\n    at cause.js:10:5',
       });
     });
 
     it('should serialize string errors', () => {
       const serialized = serializeError('String error');
 
-      expect(serialized).toEqual({ message: 'String error' });
+      expect(serialized).toEqual({
+        type: 'Error',
+        message: 'String error',
+        language: 'nodejs',
+      });
     });
 
     it('should serialize unknown types', () => {
       const serialized = serializeError(42);
 
-      expect(serialized).toEqual({ message: '42' });
+      expect(serialized).toEqual({
+        type: 'Error',
+        message: '42',
+        language: 'nodejs',
+      });
+    });
+
+    it('should parse function name from stack trace', () => {
+      const error = new Error('Test error');
+      error.stack = 'Error: Test error\n    at handleRequest (/app/src/api.ts:42:15)\n    at processRequest (/app/src/server.ts:128:10)';
+
+      const serialized = serializeError(error);
+
+      expect(serialized.stacktrace).toEqual([
+        { function: 'handleRequest', file: '/app/src/api.ts', line: 42, column: 15 },
+        { function: 'processRequest', file: '/app/src/server.ts', line: 128, column: 10 },
+      ]);
+    });
+
+    it('should include Node.js error properties in metadata', () => {
+      const error = new Error('ENOENT: no such file or directory') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      error.errno = -2;
+      error.syscall = 'open';
+      error.path = '/missing/file.txt';
+      error.stack = 'Error: ENOENT\n    at fs.js:1:1';
+
+      const serialized = serializeError(error);
+
+      expect(serialized.metadata).toEqual({
+        code: 'ENOENT',
+        errno: -2,
+        syscall: 'open',
+        path: '/missing/file.txt',
+      });
     });
   });
 });
