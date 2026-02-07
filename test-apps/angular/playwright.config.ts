@@ -16,9 +16,9 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `npx ng serve --port ${APP_PORT}`,
-    url: `http://127.0.0.1:${APP_PORT}`,
-    timeout: 90_000,
+    command: `npx ng serve --port ${APP_PORT} --host 127.0.0.1`,
+    url: `http://localhost:${APP_PORT}`,
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
 });
