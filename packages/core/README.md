@@ -49,7 +49,7 @@ import { hub } from '@logtide/core';
 
 // Initialize once
 hub.init({
-  dsn: 'https://lp_your_key@your-instance.com/project-id',
+  dsn: 'https://lp_your_key@your-instance.com',
   service: 'my-app',
 });
 
@@ -81,7 +81,7 @@ process.on('SIGTERM', () => hub.close());
 import { LogtideClient } from '@logtide/core';
 
 const client = new LogtideClient({
-  dsn: 'https://lp_your_key@your-instance.com/project-id',
+  dsn: 'https://lp_your_key@your-instance.com',
   service: 'my-app',
 });
 

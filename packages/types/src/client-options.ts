@@ -4,14 +4,13 @@ import type { Transport } from './transport';
 export interface DSN {
   apiUrl: string;
   apiKey: string;
-  projectId: string;
 }
 
 export interface ClientOptions {
-  /** DSN string: https://lp_APIKEY@api.logtide.dev/PROJECT_ID */
+  /** DSN string: https://lp_APIKEY@api.logtide.dev */
   dsn: string;
-  /** Service name for log attribution */
-  service: string;
+  /** Service name for log attribution (optional, defaults to framework name) */
+  service?: string;
   /** Environment (e.g. production, staging) */
   environment?: string;
   /** Release / version identifier */

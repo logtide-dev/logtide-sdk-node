@@ -48,7 +48,7 @@ import { logtide } from '@logtide/express';
 const app = express();
 
 app.use(logtide({
-  dsn: 'https://lp_your_key@your-instance.com/project-id',
+  dsn: 'https://lp_your_key@your-instance.com',
   service: 'my-express-api',
   environment: 'production',
 }));

@@ -41,7 +41,7 @@ class DefaultTransport implements Transport {
     });
 
     this.spanTransport = new BatchTransport({
-      inner: new OtlpHttpTransport(dsn, options.service),
+      inner: new OtlpHttpTransport(dsn, options.service || 'unknown'),
       batchSize: options.batchSize,
       flushInterval: options.flushInterval,
       maxBufferSize: options.maxBufferSize,
@@ -103,7 +103,7 @@ export class LogtideClient implements IClient {
     return this._isInitialized;
   }
 
-  get service(): string {
+  get service(): string | undefined {
     return this.options.service;
   }
 
@@ -115,6 +115,10 @@ export class LogtideClient implements IClient {
     return this.options.release;
   }
 
+  private resolveService(scope?: Scope): string {
+    return scope?.service || this.options.service || 'unknown';
+  }
+
   // ─── Logging ───────────────────────────────────────────
 
   captureLog(
@@ -124,7 +128,7 @@ export class LogtideClient implements IClient {
     scope?: Scope,
   ): void {
     const entry: InternalLogEntry = {
-      service: this.options.service,
+      service: this.resolveService(scope),
       level: level as LogLevel,
       message,
       time: new Date().toISOString(),

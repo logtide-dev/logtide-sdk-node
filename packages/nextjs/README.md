@@ -51,7 +51,7 @@ import { registerLogtide, captureRequestError } from '@logtide/nextjs/server';
 
 export async function register() {
   await registerLogtide({
-    dsn: 'https://lp_your_key@your-instance.com/project-id',
+    dsn: 'https://lp_your_key@your-instance.com',
     service: 'my-nextjs-app',
     environment: process.env.NODE_ENV,
   });
@@ -72,7 +72,7 @@ import { useEffect } from 'react';
 import { initLogtide, trackNavigation } from '@logtide/nextjs/client';
 
 initLogtide({
-  dsn: 'https://lp_your_key@your-instance.com/project-id',
+  dsn: 'https://lp_your_key@your-instance.com',
   service: 'my-nextjs-app',
 });
 
